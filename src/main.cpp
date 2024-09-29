@@ -121,12 +121,14 @@ private:
   WiFiClient client;
   unsigned int stride;
   unsigned int led_qty;
+  int lastSentState;  // Nueva variable para almacenar el último estado enviado
 
 public:
   ESP32Client() {
     context = new Context(new State3);  // Iniciar en el estado 3 por defecto
     stride = 6;                         // Valores predeterminados
     led_qty = 3;                        // Valores predeterminados
+    lastSentState = -1;                 // Inicializar con un valor inválido para indicar que no se ha enviado ningún estado
   }
 
   ~ESP32Client() {
@@ -158,15 +160,16 @@ public:
       // Proceso normal del cliente si está conectado
       float distance = measureDistance();
       int actualState = determineState(distance);
-      if (actualState != context->getStateID()) {
+
+      // Si el estado ha cambiado comparado con el último estado enviado
+      if (actualState != context->getStateID() || actualState != lastSentState) {
         changeContext(actualState);
-        context->request(distance);
-        sendState();
+        context->request(distance);  // Ejecuta la acción para el nuevo estado
+        sendState();                 // Enviar el estado actualizado al servidor
       }
-      
     }
 
-    delay(1000);
+    delay(1000);  // Ajusta este delay según lo necesario
   }
 
   void reconnectToServer() {
@@ -271,11 +274,16 @@ public:
   }
 
   void sendState() {
-    unsigned int state = context->getStateID();
-    if (client.connected()) {
-      client.print("PUT " + String(state));
-    } else {
-      Serial.println("Error al conectar con el servidor");
+    unsigned int state = context->getStateID();  // Obtener el estado actual del contexto
+    if (client.connected() && state != lastSentState) {
+      // Enviar el comando PUT al servidor con el estado actual
+      String command = "PUT " + String(state);
+      client.print(command + "\n");  // Asegúrate de enviar el carácter de nueva línea
+      Serial.println("Comando enviado: " + command);
+
+      lastSentState = state;  // Actualizar el último estado enviado
+    } else if (!client.connected()) {
+      Serial.println("Error: No conectado al servidor");
     }
   }
 };
