@@ -24,6 +24,17 @@ public:
       lastMeasurement = currentMillis;
     }
   }
+
+  static void NonBlockingDelay(unsigned long milliseconds, void (*callback)()) {
+    static unsigned long lastMeasurement = 0;
+    unsigned long currentMillis = millis();
+
+    if (currentMillis - lastMeasurement >= milliseconds) {
+        callback();
+        lastMeasurement = currentMillis;
+    }
+}
+
 };
 
 class UltrasonicSensor {
@@ -68,50 +79,50 @@ public:
     this->context = context;
   }
 
-  virtual void handleDistance(float distance) = 0;
-  virtual int getStateID() = 0;
+  virtual void handleDistance() = 0;
+  virtual unsigned int getStateID() = 0;
 };
 
 class State0 : public State {
 public:
-  void handleDistance(float distance) override {
+  void handleDistance() override {
     std::cout << "State 0: Encender 3 LEDs\n";
   }
 
-  int getStateID() override {
+  unsigned int getStateID() override {
     return 0;
   }
 };
 
 class State1 : public State {
 public:
-  void handleDistance(float distance) override {
+  void handleDistance() override {
     std::cout << "State 1: Encender 2 LEDs\n";
   }
 
-  int getStateID() override {
+  unsigned int getStateID() override {
     return 1;
   }
 };
 
 class State2 : public State {
 public:
-  void handleDistance(float distance) override {
+  void handleDistance() override {
     std::cout << "State 2: Encender 1 LED\n";
   }
 
-  int getStateID() override {
+  unsigned int getStateID() override {
     return 2;
   }
 };
 
 class State3 : public State {
 public:
-  void handleDistance(float distance) override {
+  void handleDistance() override {
     std::cout << "State 3: No encender LEDs\n";
   }
 
-  int getStateID() override {
+  unsigned int getStateID() override {
     return 3;
   }
 };
@@ -121,11 +132,11 @@ private:
   State *state;
   unsigned int stride;
   unsigned int led_qty;
-  int lastSentState;
+  unsigned int lastSentState;
 
 public:
   Context(State *state, unsigned int stride = 6, unsigned int led_qty = 3)
-    : state(nullptr), stride(stride), led_qty(led_qty) {
+    : state(nullptr), stride(stride), led_qty(led_qty), lastSentState(led_qty + 1) {
     this->transitionTo(state);
   }
 
@@ -141,48 +152,42 @@ public:
     this->state->set_context(this);
   }
 
-  void request(float distance) {
-    this->state->handleDistance(distance);
+  void request() {
+    this->state->handleDistance();
   }
 
-  int getStateID() {
+  unsigned int getStateID() {
     return this->state->getStateID();
-  }
-
-  unsigned int getStride() const {
-    return stride;
-  }
-  unsigned int getLedQty() const {
-    return led_qty;
   }
 
   void setStride(unsigned int newStride) {
     stride = newStride;
   }
+
   void setLedQty(unsigned int newLedQty) {
     led_qty = newLedQty;
   }
 
-  int determineState(float distance) {
-    return distance / stride;
+  unsigned int determineState(float distance) {
+    unsigned int state = distance / stride;
+    return (state <= led_qty) ? state : led_qty;
   }
 
-  // Método para cambiar el contexto según el estado
-  void changeContext(float distance) {
-    int newState = determineState(distance);
+  bool stateChanged(unsigned int & actualState){
+    return actualState != lastSentState;
+  }
 
-    // Verificar si el estado ha cambiado
-    if (newState != lastSentState) {
-      lastSentState = newState;  // Actualizar el estado anterior
-      if (newState == 0) {
-        transitionTo(new State0());
-      } else if (newState == 1) {
-        transitionTo(new State1());
-      } else if (newState == 2) {
-        transitionTo(new State2());
-      } else {
-        transitionTo(new State3());
-      }
+  void changeContext(unsigned int actualState) {
+    lastSentState = actualState;
+
+    if (actualState == 0) {
+      transitionTo(new State0());
+    } else if (actualState == 1) {
+      transitionTo(new State1());
+    } else if (actualState == 2) {
+      transitionTo(new State2());
+    } else {
+      transitionTo(new State3());
     }
   }
 };
@@ -214,15 +219,13 @@ private:
   Context *context;
   WiFiClient client;
   WiFiConnection *wifiConnection;
-  UltrasonicSensor *ultrasonicSensor;  // Instancia del sensor ultrasónico
-  int lastSentState;
+  UltrasonicSensor *ultrasonicSensor;
 
 public:
   SensorClient(const char *SSID, const char *PASSWORD, unsigned int trigPin = 19, unsigned int echoPin = 22) {
     context = new Context(new State3);
     wifiConnection = new WiFiConnection(SSID, PASSWORD);
     ultrasonicSensor = new UltrasonicSensor(trigPin, echoPin);
-    lastSentState = -1;
   }
 
   ~SensorClient() {
@@ -239,20 +242,22 @@ public:
   void loop() {
     if (client.connected()) {
       float distance = ultrasonicSensor->getDistanceInCM();
-
-      context->changeContext(distance);
-
-      // Siempre solicita y envía el estado
-      context->request(distance);
-      sendState();
+      unsigned int actualState = context->determineState(distance);
+      if (context->stateChanged(actualState)){
+        context->changeContext(actualState);
+        context->request();
+        sendState();
+      }
+      
     } else {
       reconnectToServer();
     }
 
-    delay(1000);
+    // delay(1000);
   }
 
   void reconnectToServer() {
+    client.stop();
     Serial.println("Intentando conectar al servidor...");
     if (client.connect(SERVER_HOST, SERVER_PORT)) {
       Serial.println("Conectado al servidor TCP");
@@ -280,7 +285,7 @@ public:
     if (client.connected()) {
       client.print(command);
       while (!client.available()) {
-        delay(100);
+        delay(500);
       }
       String response = client.readStringUntil('\n');
       Serial.println("Respuesta del servidor: " + response);
@@ -300,11 +305,10 @@ public:
 
   void sendState() {
     unsigned int state = context->getStateID();
-    if (client.connected() && state != lastSentState) {
+    if (client.connected()) {
       String command = "PUT " + String(state);
       client.print(command);
       Serial.println("Comando enviado: " + command);
-      lastSentState = state;
     } else if (!client.connected()) {
       Serial.println("Error: No conectado al servidor");
     }
@@ -318,5 +322,7 @@ void setup() {
 }
 
 void loop() {
-  client.loop();
+   Utilities::NonBlockingDelay(1000, []() {
+    client.loop();
+  });
 }
