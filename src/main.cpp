@@ -3,6 +3,7 @@
 #include <WiFiClient.h>
 #include <iostream>
 #include <string>
+#include <functional>
 
 using namespace std;
 
@@ -25,16 +26,15 @@ public:
     }
   }
 
-  static void NonBlockingDelay(unsigned long milliseconds, void (*callback)()) {
+  static void NonBlockingDelay(unsigned long milliseconds, std::function<void()> callback) {
     static unsigned long lastMeasurement = 0;
     unsigned long currentMillis = millis();
 
     if (currentMillis - lastMeasurement >= milliseconds) {
-        callback();
-        lastMeasurement = currentMillis;
+      callback();
+      lastMeasurement = currentMillis;
     }
-}
-
+  }
 };
 
 class UltrasonicSensor {
@@ -173,7 +173,7 @@ public:
     return (state <= led_qty) ? state : led_qty;
   }
 
-  bool stateChanged(unsigned int & actualState){
+  bool stateChanged(unsigned int &actualState) {
     return actualState != lastSentState;
   }
 
@@ -220,6 +220,7 @@ private:
   WiFiClient client;
   WiFiConnection *wifiConnection;
   UltrasonicSensor *ultrasonicSensor;
+  bool isConnected = false;
 
 public:
   SensorClient(const char *SSID, const char *PASSWORD, unsigned int trigPin = 19, unsigned int echoPin = 22) {
@@ -240,39 +241,28 @@ public:
   }
 
   void loop() {
-    if (client.connected()) {
-      float distance = ultrasonicSensor->getDistanceInCM();
-      unsigned int actualState = context->determineState(distance);
-      if (context->stateChanged(actualState)){
-        context->changeContext(actualState);
-        context->request();
-        sendState();
+    if (!isConnected) {
+      connectToServer();
+    } else {
+      sendDataToServer();
+    }
+  }
+
+  void connectToServer() {
+    if (!client.connected()) {
+      if (client.connect(SERVER_HOST, SERVER_PORT)) {
+        Serial.println("Conectado al servidor");
+
+        client.print("REGISTER SENSOR");
+        Utilities::NonBlockingDelay(500, [this]() {
+                this->getRanges(); // Ahora se llama a getRanges correctamente
+            });
+        isConnected = true;
+      } else {
+        Serial.println("Error al conectar con el servidor");
+
+        isConnected = false;
       }
-      
-    } else {
-      reconnectToServer();
-    }
-
-    // delay(1000);
-  }
-
-  void reconnectToServer() {
-    client.stop();
-    Serial.println("Intentando conectar al servidor...");
-    if (client.connect(SERVER_HOST, SERVER_PORT)) {
-      Serial.println("Conectado al servidor TCP");
-      registerDevice();
-      getRanges();
-    } else {
-      Serial.println("Error al conectar al servidor TCP");
-    }
-  }
-
-  void registerDevice() {
-    if (client.connected()) {
-      client.print("REGISTER SENSOR");
-    } else {
-      Serial.println("Error al conectar con el servidor");
     }
   }
 
@@ -285,7 +275,9 @@ public:
     if (client.connected()) {
       client.print(command);
       while (!client.available()) {
-        delay(500);
+        Utilities::NonBlockingDelay(500, []() {
+          ;
+        });
       }
       String response = client.readStringUntil('\n');
       Serial.println("Respuesta del servidor: " + response);
@@ -301,6 +293,16 @@ public:
 
     context->setStride(response.substring(0, space_pos).toInt());
     context->setLedQty(response.substring(space_pos + 1).toInt());
+  }
+
+  void sendDataToServer() {
+    float distance = ultrasonicSensor->getDistanceInCM();
+    unsigned int actualState = context->determineState(distance);
+    if (context->stateChanged(actualState)) {
+      context->changeContext(actualState);
+      context->request();
+      sendState();
+    }
   }
 
   void sendState() {
@@ -322,7 +324,7 @@ void setup() {
 }
 
 void loop() {
-   Utilities::NonBlockingDelay(1000, []() {
+  Utilities::NonBlockingDelay(500, []() {
     client.loop();
   });
 }
