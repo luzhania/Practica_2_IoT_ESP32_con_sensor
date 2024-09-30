@@ -255,8 +255,8 @@ public:
 
         client.print("REGISTER SENSOR");
         Utilities::NonBlockingDelay(500, [this]() {
-                this->getRanges(); // Ahora se llama a getRanges correctamente
-            });
+          this->getRanges();  // Ahora se llama a getRanges correctamente
+        });
         isConnected = true;
       } else {
         Serial.println("Error al conectar con el servidor");
@@ -296,24 +296,26 @@ public:
   }
 
   void sendDataToServer() {
-    float distance = ultrasonicSensor->getDistanceInCM();
-    unsigned int actualState = context->determineState(distance);
-    if (context->stateChanged(actualState)) {
-      context->changeContext(actualState);
-      context->request();
-      sendState();
+    if (client.connected()) {
+      float distance = ultrasonicSensor->getDistanceInCM();
+      unsigned int actualState = context->determineState(distance);
+      if (context->stateChanged(actualState)) {
+        context->changeContext(actualState);
+        context->request();
+        sendState();
+      }
+    } else {
+      Serial.println("Error: No conectado al servidor");
+      isConnected = false;
+      client.stop();
     }
   }
 
   void sendState() {
     unsigned int state = context->getStateID();
-    if (client.connected()) {
-      String command = "PUT " + String(state);
-      client.print(command);
-      Serial.println("Comando enviado: " + command);
-    } else if (!client.connected()) {
-      Serial.println("Error: No conectado al servidor");
-    }
+    String command = "PUT " + String(state);
+    client.print(command);
+    Serial.println("Comando enviado: " + command);
   }
 };
 
