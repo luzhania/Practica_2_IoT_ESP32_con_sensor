@@ -11,7 +11,7 @@ class Utilities
 {
 public:
 
-  static void NonBlockingDelay(unsigned long milliseconds, std::function<void()> callback)
+  static void nonBlockingDelay(unsigned long milliseconds, std::function<void()> callback)
   {
     static unsigned long lastMeasurement = 0;
     unsigned long currentMillis = millis();
@@ -341,7 +341,7 @@ public:
   {
     while(!client.available())
     {
-      Utilities::NonBlockingDelay(500, []()
+      Utilities::nonBlockingDelay(500, []()
       {;});
     }
     String response = client.readStringUntil('\n');
@@ -359,6 +359,6 @@ void setup()
 
 void loop()
 {
-  Utilities::NonBlockingDelay(100, []()
+  Utilities::nonBlockingDelay(100, []()
                               { client.loop(); });
 }
