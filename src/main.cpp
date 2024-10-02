@@ -114,12 +114,12 @@ class Context
 private:
   State *state;
   unsigned int stride;
-  unsigned int led_qty;
+  unsigned int ledQty;
   unsigned int lastSentState;
 
 public:
-  Context(State *state, unsigned int stride = 6, unsigned int led_qty = 3)
-      : state(nullptr), stride(stride), led_qty(led_qty), lastSentState(led_qty + 1)
+  Context(State *state, unsigned int stride = 6, unsigned int ledQty = 3)
+      : state(nullptr), stride(stride), ledQty(ledQty), lastSentState(ledQty + 1)
   {
     this->transitionTo(state);
   }
@@ -151,13 +151,13 @@ public:
 
   void setLedQty(unsigned int newLedQty)
   {
-    led_qty = newLedQty;
+    ledQty = newLedQty;
   }
 
   unsigned int determineState(float distance)
   {
     unsigned int state = distance / stride;
-    return (state <= led_qty) ? state : led_qty;
+    return (state <= ledQty) ? state : ledQty;
   }
 
   bool stateChanged(unsigned int &actualState)
@@ -263,6 +263,7 @@ public:
       {
         Serial.println("Conectado al servidor");
         isConnected = true;
+        requestGetRanges();
       }
       else
       {
@@ -313,6 +314,39 @@ public:
       Serial.println("Error: No conectado al servidor, intentando reconectar...");
       isConnected = false; 
     }
+  }
+
+  void requestGetRanges()
+  {
+    if (client.connected())
+    {
+      client.println("GET RANGES");
+      responseGetRanges();
+    }
+    else
+    {
+      Serial.println("Error: No conectado al servidor, intentando reconectar...");
+      isConnected = false; 
+    }
+  }
+
+  void setRanges(const String &response) {
+    size_t space_pos = response.indexOf(' ');
+
+    context->setStride(response.substring(0, space_pos).toInt());
+    context->setLedQty(response.substring(space_pos + 1).toInt());
+  }
+
+  void responseGetRanges()
+  {
+    while(!client.available())
+    {
+      Utilities::NonBlockingDelay(500, []()
+      {;});
+    }
+    String response = client.readStringUntil('\n');
+    Serial.println("Respuesta del servidor: " + response);
+    setRanges(response);
   }
 };
 
