@@ -70,18 +70,12 @@ public:
     this->context = context;
   }
 
-  virtual void handleDistance() = 0;
   virtual unsigned int getStateID() = 0;
 };
 
 class State0 : public State
 {
 public:
-  void handleDistance() override
-  {
-    Serial.println("State 0: Encender 3 LEDs");
-  }
-
   unsigned int getStateID() override
   {
     return 0;
@@ -91,11 +85,6 @@ public:
 class State1 : public State
 {
 public:
-  void handleDistance() override
-  {
-    Serial.println("State 1: Encender 2 LEDs");
-  }
-
   unsigned int getStateID() override
   {
     return 1;
@@ -105,11 +94,6 @@ public:
 class State2 : public State
 {
 public:
-  void handleDistance() override
-  {
-    Serial.println("State 2: Encender 1 LED");
-  }
-
   unsigned int getStateID() override
   {
     return 2;
@@ -119,11 +103,6 @@ public:
 class State3 : public State
 {
 public:
-  void handleDistance() override
-  {
-    Serial.println("State 3: No encender LEDs");
-  }
-
   unsigned int getStateID() override
   {
     return 3;
@@ -158,11 +137,6 @@ public:
       delete this->state;
     this->state = state;
     this->state->set_context(this);
-  }
-
-  void request()
-  {
-    this->state->handleDistance();
   }
 
   unsigned int getStateID()
@@ -306,7 +280,6 @@ public:
     if (context->stateChanged(actualState))
     {
       context->changeContext(actualState);
-      context->request(); 
       sendState();
     }
 
